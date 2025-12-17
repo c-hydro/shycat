@@ -1,0 +1,97 @@
+{
+  "algorithm": {
+    "flags": {
+      "delete_calib_data": false,
+      "rescale_input_out_of_range": true,
+      "plot_param_boxplots": true,
+      "boxplot_max_combinations": 200,
+      "plot_timeseries_plotly": true
+    },
+    "general": {
+      "domain_name": "mozambique_ara_sul_2",
+      "start_with_iteration_number": 1,
+      "max_number_of_iterations": 5,
+      "number_of_points_first_iteration": 50,
+      "percentage_samples_successive_iterations": 80,
+      "percentage_param_range_reduction": 50,
+      "percentage_min_improvement_quit_optimization": 1,
+      "error_metrics": {
+        "__comment__": "best value: choose if max or min - shift different from 0 if negative values are possible",
+        "function": "nrmse_mean",
+        "best_value": "min",
+        "shift_for_positive": 0,
+        "minimum_ins_inf": false
+      }
+    },
+    "time": {
+      "run_hydro_start": "2009-09-01 00:00",
+      "run_hydro_end": "2013-09-05 00:00",
+      "calib_hydro_start": "2010-09-02 00:00"
+    },
+    "path": {
+      "work_path": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/calibration/",
+      "out_path": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/calibration/output",
+      "log_path": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/calibration/log"
+    }
+  },
+  "data": {
+    "hydro": {
+      "folder": "/share/idrologia/READY2ACT/tools/discharge/series/",
+      "filename": "{section_name}.csv",
+      "date_col": 0,
+      "value_col": 1,
+      "sep": ",",
+      "date_fmt": "%d-%b-%Y",
+      "calib_hydro_resolution": "D",
+      "null_values": [
+        -9999,
+        -999,
+        "NA"
+      ]
+    },
+    "hmc": {
+      "model_exe": "/share/idrologia/READY2ACT/tools/hmc/HMC_330.x",
+      "model_settings": "/share/idrologia/READY2ACT/tools/hmc/mozambique_ara_sul_2.info_calib.txt",
+      "system_env_libraries": "/home/fp/fp_libs_system/fp_system_libs_hmc"
+    }
+  },
+  "calibration": {
+    "input_point_data_folder": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/point/",
+    "input_gridded_data_folder": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/gridded/",
+    "input_base_maps": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/gridded/",
+    "sigma_start": 10,
+    "__info__": "pick the calibration approach between rescale - mask - uniform",
+    "parameters": {
+      "ct": {
+        "calibrate": true,
+        "approach": "rescale",
+        "max": 0.6,
+        "min": 0.3,
+        "lakes_mask": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/ancillary/waterbodies.tif"
+      },
+      "soil_ksat_infilt": {
+        "calibrate": true,
+        "approach": "rescale",
+        "max": 12,
+        "min": 0.5,
+        "log_scale": false,
+        "lakes_mask": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/ancillary/waterbodies.tif"
+      },
+      "soil_ksat_drain": {
+        "calibrate": true,
+        "approach": "rescale",
+        "max": 2,
+        "min": 0.05,
+        "log_scale": false,
+        "lakes_mask": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/ancillary/waterbodies.tif"
+      },
+      "soil_vmax": {
+        "calibrate": true,
+        "approach": "rescale",
+        "max": 1000,
+        "min": 200,
+        "lakes_mask": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/ancillary/waterbodies.tif"
+      }
+    }
+  }
+}
