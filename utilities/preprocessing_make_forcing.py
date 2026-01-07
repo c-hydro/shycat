@@ -86,8 +86,10 @@ def main():
 
     # Environment for subprocess calls (avoid oversubscription on loaded servers)
     env = dict(os.environ)
-    env["OMP_NUM_THREADS"] = str(omp_threads)
-    env["CDO_PCTL_NTHREADS"] = str(cdo_threads)
+    if omp_threads is not None:
+        env["OMP_NUM_THREADS"] = str(omp_threads)
+    if cdo_threads is not None:
+        env["CDO_PCTL_NTHREADS"] = str(cdo_threads)
 
     logging.info(' ============================================================================ ')
     logging.info(' ==> ' + alg_name + ' (Version: ' + alg_version + ' Release_Date: ' + alg_release + ')')
