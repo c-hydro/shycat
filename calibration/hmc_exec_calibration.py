@@ -29,7 +29,7 @@ Changelog:
                         Exclude lakes values from all calculations
                         Allow lakes values from json, or hard-coded defaults
                         Flag algorithm.flags.rescale_input_out_of_range to enable/disable pre-rescaling (default False)
-20251216 (1.6.6) -->    General reorganization of the script
+20260107 (2.0.0) -->    General reorganization of the script
                         Adding diagnostic plots
 """
 # -------------------------------------------------------------------------------------
@@ -39,7 +39,6 @@ import os, pickle, math, time
 import rasterio as rio
 import pandas as pd
 from pyDOE import lhs
-from cdo import *
 import logging
 from datetime import date
 from argparse import ArgumentParser
@@ -52,6 +51,8 @@ import hydrostats as hs
 import subprocess
 from typing import Optional
 
+from tools.tools_hmc import read_discharge_hmc, make_launcher
+from tools.tools_plot import plot_param_boxplots_matplotlib, plot_iter_timeseries
 # -------------------------------------------------------------------------------------
 # Algorithm info
 alg_name = 'HMC tools - Calibration'
@@ -554,19 +555,16 @@ def main():
 
         # -------------------------------------------------------------------------------------
         # Diagnostics (pre-run): parameter boxplots
-        # Generate boxplots right after creating the parameter maps, before launching HMC.
         flags = data_settings['algorithm'].get('flags', {})
         if flags.get('plot_param_boxplots', False):
             try:
                 plots_dir = os.path.join(path_settings['out_path'], 'plots', 'boxplots', f'ITER{iIter:02d}')
-                max_boxes = flags.get('boxplot_max_combinations', None)
                 plot_param_boxplots_matplotlib(
                     domain=domain,
                     iiter=iIter,
                     maps_iter=maps_iter,
                     out_dir=plots_dir,
-                    calibration_parameters=data_settings['calibration']['parameters'],
-                    max_boxes=max_boxes
+                    calibration_parameters=data_settings['calibration']['parameters']
                 )
                 logging.info(' ---> Pre-run boxplots saved')
             except Exception as e:
@@ -690,14 +688,14 @@ def main():
         # 5.6 Diagnostics plots (optional)
         flags = data_settings['algorithm'].get('flags', {})
 
-        if flags.get('plot_timeseries_plotly', False):
+        if flags.get('plot_timeseries', False):
             try:
-                plots_dir = os.path.join(path_settings['out_path'], 'plots', 'timeseries_plotly', f'ITER{iIter:02d}')
+                plots_dir = os.path.join(path_settings['out_path'], 'plots', 'timeseries', f'ITER{iIter:02d}')
                 best_value = data_settings['algorithm']['general']['error_metrics']['best_value']
-                plot_iter_timeseries_plotly(domain, iIter, plots_dir, section_data, hmc_results, scores_iter, best_value)
-                logging.info(' ---> Plotly time series saved')
+                plot_iter_timeseries(domain, iIter, plots_dir, section_data, hmc_results, scores_iter, best_value)
+                logging.info(' ---> Plot time series saved')
             except Exception as e:
-                logging.warning(f' ---> Plotly time series failed: {e}')
+                logging.warning(f' ---> Plot time series failed: {e}')
 
 
         # 5.6 Persist results
@@ -780,7 +778,6 @@ def main():
     logging.info('==> Bye, Bye')
     logging.info('============================================================================')
 
-
 # -------------------------------------------------------------------------------------
 # Method to get script argument(s)
 def get_args():
@@ -791,7 +788,6 @@ def get_args():
         return parser_values.alg_settings
     else:
         return 'configuration.json'
-
 
 # -------------------------------------------------------------------------------------
 # Method to read JSON settings (with environment variable expansion)
@@ -870,7 +866,6 @@ def lhssample(n, p):
 
 # -------------------------------------------------------------------------------------
 # Function for treating lakes
-
 def assign_lakes(arr, par_name, par_settings, in_log_space):
     """
     If 'lakes_mask' is provided, fill lake cells with the configured lake value.
@@ -969,96 +964,6 @@ def copy_all_files(source_folder, destination_folder):
         if os.path.isfile(source):
             shutil.copy(source, destination)
 
-
-# -------------------------------------------------------------------------------------
-# Create a simple HMC launcher script in each run’s 'exe' folder
-def make_launcher(iter_exe_path, domain_name, env_path):
-    """
-    Writes 'launcher.sh' in iter_exe_path that:
-      1) sources the provided env_path (e.g. library exports)
-      2) cds into iter_exe_path
-      3) runs the HMC binary with '<domain>.info.txt' as input.
-    """
-    with open(os.path.join(iter_exe_path, "launcher.sh"), "w") as launcher:
-        launcher.write("#!/bin/bash\n")
-        launcher.write(f"source {env_path}\n")
-        launcher.write(f"cd {iter_exe_path}\n")
-        launcher.write("chmod 777 HMC3_calib.x\n")
-        launcher.write("ulimit -s unlimited\n")
-        launcher.write(f"./HMC3_calib.x {domain_name}.info.txt\n")
-
-
-# -------------------------------------------------------------------------------------
-# Read HMC’s ASCII output time‐series file into a pandas DataFrame
-def read_discharge_hmc(output_path='', col_names=None, output_name="hmc.hydrograph.txt",
-                       format='txt', start_time=None, end_time=None):
-    """
-    Reads the HMC output time‐series (ASCII) file:
-      - index_col=0 is parsed as a datetime (format '%Y%m%d%H%M')
-      - subsequent columns are unnamed; we assign col_names if provided.
-    If col_names length ≠ number of columns, raises IOError.
-    Subsets the DF to [start_time : end_time], if given; otherwise uses the full range.
-    """
-    if format == 'txt':
-        custom_date_parser = lambda x: dt.datetime.strptime(x, "%Y%m%d%H%M")
-        if col_names is None:
-            print(' ---> ERROR! Columns names parameter not provided!')
-            raise IOError("Section list should be provided as col_names parameter!")
-
-        hmc_discharge_df = pd.read_csv(
-            os.path.join(output_path, output_name),
-            header=None,
-            delimiter=r"\s+",
-            parse_dates=[0],
-            index_col=[0],
-            date_parser=custom_date_parser
-        )
-
-        if len(col_names) == len(hmc_discharge_df.columns):
-            hmc_discharge_df.columns = col_names
-        else:
-            print(' ---> ERROR! Number of hmc output columns is not consistent with the number of stations!')
-            raise IOError("Verify your section file, your run setup or provide a personal column setup!")
-
-        if start_time is None:
-            start_time = min(hmc_discharge_df.index)
-        if end_time is None:
-            end_time = max(hmc_discharge_df.index)
-
-        return hmc_discharge_df[start_time:end_time]
-    else:
-        raise NotImplementedError("Only 'txt' format is supported for HMC output.")
-
-
-# -------------------------------------------------------------------------------------
-# (Optional) cost function using Kling‐Gupta Efficiency (not invoked by default)
-def costiIdro(matSim, matObs, stations):
-    """
-    Example of a hydro‐cost function using KGE transformed into a cost via arctan:
-      - matSim, matObs: pandas DataFrames (each column = station timeseries)
-      - stations: object with .area attribute to supply station areas (for weighting).
-    Returns an array J with one value per station, plus a weighted aggregate.
-    """
-    J = np.empty((1, len(matSim.columns.values) + 1))
-    ind = np.empty((1, len(matSim.columns.values) + 1))
-    ii = 0
-
-    for staz in matSim.columns.values:
-        xSim = matSim[staz]
-        xObs = matObs[staz]
-        KGE = 1 - np.sqrt(
-            (np.corrcoef(xSim, xObs)[0, 1] - 1) ** 2
-            + (((np.std(xSim) / np.mean(xSim)) / (np.std(xObs) / np.mean(xObs)) - 1)) ** 2
-            + ((np.mean(xSim) / np.mean(xObs) - 1)) ** 2
-        )
-        J[0, ii] = (2 / np.pi) * np.arctan(1 - KGE)
-        ind[0, ii] = np.log(stations.area[staz])
-        ii += 1
-
-    J[0, -1] = np.nansum(J[0, 0:-1] * ind[0, 0:-1]) / np.nansum(ind[0, 0:-1] * (J[0, 0:-1] / J[0, 0:-1]))
-    return J
-
-
 # ----------------------------------------------------------------------------
 def lake_value_for(par_name: str, par_settings):
     """Resolve the value to assign to lake cells for a given parameter.
@@ -1089,206 +994,6 @@ def lake_value_for(par_name: str, par_settings):
     }
     return LAKE_DEFAULTS.get(str(par_name), None)
 
-
-# ----------------------------------------------------------------------------
-
-
-# -------------------------------------------------------------------------------------
-# Plotting utilities
-
-def plot_param_boxplots_matplotlib(domain, iiter, maps_iter, out_dir, calibration_parameters, max_boxes=None):
-    """Create per-parameter boxplots of map values across parameter combinations.
-
-    The boxplots are meant as a *sampling diagnostic* and should be generated right after
-    maps are created (before launching HMC).
-
-    - X axis: combinations (001..N)
-    - Y axis: distribution of valid (finite) grid values over the *calibratable* domain
-      (domain mask == 1) excluding lakes pixels when a `lakes_mask` is provided for that
-      parameter.
-    """
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-
-    os.makedirs(out_dir, exist_ok=True)
-
-    comb_ids = sorted([k for k in maps_iter.keys()])
-    if not comb_ids:
-        logging.warning(" ---> Boxplots: no combinations found in maps_iter")
-        return
-
-    # Optional cap on number of boxes (useful when there are many combinations)
-    if max_boxes is not None:
-        try:
-            max_boxes = int(max_boxes)
-            if max_boxes > 0 and len(comb_ids) > max_boxes:
-                comb_ids = comb_ids[:max_boxes]
-        except Exception:
-            pass
-
-    first_maps = maps_iter[comb_ids[0]]
-
-    # Domain mask: only pixels where mask == 1 (if present)
-    dom_mask = None
-    if isinstance(first_maps, dict) and "mask" in first_maps:
-        m = first_maps["mask"]
-        try:
-            dom_mask = np.isfinite(m) & (m == 1)
-        except Exception:
-            dom_mask = None
-
-    # Plot only keys that look like parameters (exclude the generic 'mask')
-    par_names = [k for k in first_maps.keys() if k != "mask"]
-
-    for par in par_names:
-
-        # Lakes mask is defined per parameter in the JSON
-        lakes_mask = None
-        par_cfg = calibration_parameters.get(par, {})
-        lakes_path = par_cfg.get("lakes_mask", None)
-        if lakes_path:
-            try:
-                lakes_arr = rio.open(lakes_path).read(1)
-                lakes_mask = (lakes_arr == 1)
-            except Exception as e:
-                logging.warning(f" ---> Boxplots: could not read lakes_mask for '{par}': {e}")
-                lakes_mask = None
-
-        data = []
-        labels = []
-
-        for comb_id in comb_ids:
-            arr = maps_iter[comb_id].get(par, None)
-            if arr is None:
-                continue
-
-            a = arr.astype(float)
-
-            valid = np.isfinite(a)
-            if dom_mask is not None:
-                valid &= dom_mask
-            if lakes_mask is not None:
-                valid &= ~lakes_mask
-
-            vals = a[valid]
-            if vals.size == 0:
-                continue
-
-            data.append(vals)
-            labels.append(f"{comb_id:03d}")
-
-        if not data:
-            logging.info(f" ---> Boxplots: skip '{par}' (no valid cells after masking)")
-            continue
-
-        fig_w = max(10.0, len(labels) * 0.25)
-        plt.figure(figsize=(fig_w, 6))
-        plt.boxplot(data)  # showfliers=True by default
-        plt.xticks(range(1, len(labels) + 1), labels, rotation=90)
-        plt.ylabel(par)
-        plt.title(f"{domain} - ITER {iiter:02d} - {par}")
-        plt.tight_layout()
-
-        out_path = os.path.join(out_dir, f"{domain}_ITER{iiter:02d}_{par}_boxplot.png")
-        plt.savefig(out_path, dpi=150)
-        plt.close()
-def plot_iter_timeseries_plotly(domain, iiter, out_dir, section_data, hmc_results, scores_iter, best_value):
-    """Plot OBS vs SIM for one iteration (per section) and save as HTML (Plotly).
-
-    - OBS: dashed line
-    - BEST simulation: thick line
-    - All other simulations: thin + transparent lines
-    - Simulations are aggregated to the OBS time scale using mean (no thinning/subsampling).
-
-    Output
-    ------
-    One HTML per section:
-        <out_dir>/<domain>_ITERXX_<section>.html
-    """
-    import plotly.graph_objects as go
-
-    os.makedirs(out_dir, exist_ok=True)
-
-    # best index (1-based)
-    if best_value == "max":
-        idx_best = int(np.nanargmax(scores_iter["tot"].values) + 1)
-    else:
-        idx_best = int(np.nanargmin(scores_iter["tot"].values) + 1)
-
-    for section in section_data.keys():
-        fig = go.Figure()
-
-        # OBS
-        obs = section_data[section][["value"]].copy()
-        obs = obs[obs["value"].notna()]
-        obs_index = obs.index
-
-        fig.add_trace(go.Scatter(
-            x=obs_index, y=obs["value"].values,
-            mode="lines",
-            name="obs",
-            line=dict(dash="dash", width=2)
-        ))
-
-        # SIM all (excluding best)
-        for iexplor in sorted(hmc_results.keys()):
-            df_sim = hmc_results.get(iexplor, None)
-            if df_sim is None or section not in df_sim.columns:
-                continue
-            if iexplor == idx_best:
-                continue
-
-            sim = df_sim[[section]].copy()
-            sim = sim.dropna()
-            if sim.empty:
-                continue
-
-            # aggregate to obs time scale (mean) then align on obs index
-            target_freq = pd.infer_freq(obs_index)
-            if target_freq is not None:
-                sim_s = sim[section].resample(target_freq).mean()
-                sim_s = sim_s.reindex(obs_index)
-            else:
-                sim_s = sim[section].reindex(obs_index, method="nearest")
-
-            fig.add_trace(go.Scatter(
-                x=obs_index,
-                y=sim_s.values,
-                mode="lines",
-                name=f"sim {iexplor:03d}",
-                line=dict(width=1),
-                opacity=0.15,
-                showlegend=False
-            ))
-
-        # BEST
-        df_best = hmc_results.get(idx_best, None)
-        if df_best is not None and section in df_best.columns:
-            best = df_best[[section]].copy().dropna()
-            if not best.empty:
-                target_freq = pd.infer_freq(obs_index)
-                if target_freq is not None:
-                    best_s = best[section].resample(target_freq).mean()
-                    best_s = best_s.reindex(obs_index)
-                else:
-                    best_s = best[section].reindex(obs_index, method="nearest")
-
-                fig.add_trace(go.Scatter(
-                    x=obs_index, y=best_s.values,
-                    mode="lines",
-                    name=f"best {idx_best:03d}",
-                    line=dict(width=4)
-                ))
-
-        fig.update_layout(
-            title=f"{domain} - ITER {iiter:02d} - {section}",
-            xaxis_title="time",
-            yaxis_title="discharge"
-        )
-
-        out_path = os.path.join(out_dir, f"{domain}_ITER{iiter:02d}_{section}.html")
-        fig.write_html(out_path, include_plotlyjs="cdn")
 
 if __name__ == "__main__":
     main()

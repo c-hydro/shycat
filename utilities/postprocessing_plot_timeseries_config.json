@@ -1,0 +1,54 @@
+{
+  "algorithm": {
+    "path": {
+      "log_path": "/home/idrologia/share/NILE/plot/log",
+      "out_path": "/home/idrologia/share/NILE/plot"
+    },
+    "time": {
+      "date_start": "2011-01-01",
+      "date_end": null
+    },
+    "general": {
+      "plot_rain": {
+        "exec": false,
+        "rain_file": "/home/idrologia/share/mozambique/mozambique_ara_sul_1/rain_timeseries2.csv"
+      }
+    },
+    "metrics": {
+      "functions": {
+        "NSE": "nse",
+        "KGE": "kge_2012",
+        "RMSE": "rmse",
+        "MAE": "mae",
+        "R2": "r_squared",
+        "Pearson_R": "pearson_r"
+      }
+    }
+  },
+  "data": {
+    "input": {
+      "section_file": "/home/idrologia/share/NILE/data/data_static/point/IGAD_D2.info_section.txt",
+      "hydrographs": {
+        "v1_lessET": "/home/idrologia/share/NILE/calibration/simulations/ITER02-020/outcome/time-series/hmc.hydrograph.txt",
+        "v2_moreET": "/home/idrologia/share/NILE/calibration_v2/simulations/ITER02-032/outcome/time-series/hmc.hydrograph.txt"
+      },
+      "discharge_obs": {
+        "folder": "/home/idrologia/share/NILE/data/data_dynamic/discharge/all",
+        "filename": "{section_name}.csv",
+        "date_col": 0,
+        "value_col": 1,
+        "sep": ",",
+        "date_fmt": "%d/%m/%Y",
+        "null_values": [
+          -9999,
+          -999,
+          "NA"
+        ],
+        "resolution": "D"
+      }
+    },
+    "output": {
+      "plot_filename": "Q_{section}.html"
+    }
+  }
+}
