@@ -1,11 +1,9 @@
 {
   "algorithm": {
     "flags": {
-      "delete_calib_data": false,
       "rescale_input_out_of_range": true,
       "plot_param_boxplots": true,
-      "boxplot_max_combinations": 200,
-      "plot_timeseries_plotly": true
+      "plot_timeseries": true
     },
     "general": {
       "domain_name": "mozambique_ara_sul_2",
@@ -59,7 +57,6 @@
     "input_point_data_folder": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/point/",
     "input_gridded_data_folder": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/gridded/",
     "input_base_maps": "/share/idrologia/READY2ACT/mozambique_ara_sul_2/data/data_static/gridded/",
-    "sigma_start": 10,
     "__info__": "pick the calibration approach between rescale - mask - uniform",
     "parameters": {
       "ct": {
