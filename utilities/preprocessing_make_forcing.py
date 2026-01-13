@@ -163,7 +163,7 @@ def main():
 
         maps = {}
 
-        # ERA5: read once per year (as in your original logic)
+        # ERA5: read once per year
         if last_era != time_now.strftime("%Y"):
             logging.info(' -----> Open era5 data: ' + time_now.strftime("%Y"))
             era5_dset = {}
