@@ -9,6 +9,7 @@ __version__ = '1.6.6'
 __author__  = 'Andrea Libertino (andrea.libertino@cimafoundation.org)'
               'Lorenzo Campo (lorenzo.campo@cimafoundation.org)'
               'Lorenzo Alfieri (lorenzo.alfieri@cimafoundation.org)'
+              'Lucia Ferrarin (lucia.ferrarin@cimafoundation.org)'
 __library__ = 'HMC_calibration_tool'
 
 General command line:
@@ -31,6 +32,8 @@ Changelog:
                         Flag algorithm.flags.rescale_input_out_of_range to enable/disable pre-rescaling (default False)
 20260107 (2.0.0) -->    General reorganization of the script
                         Adding diagnostic plots
+20260108 (2.1.0) ->     AWS compatible
+                        Fixed inconsistencies in the hourly to daily conversion
 """
 # -------------------------------------------------------------------------------------
 # Libraries
@@ -49,6 +52,7 @@ from osgeo import gdal
 import datetime as dt
 import hydrostats as hs
 import subprocess
+import re
 from typing import Optional
 
 from tools.tools_hmc import read_discharge_hmc, make_launcher
@@ -344,12 +348,19 @@ def main():
                 **common_kwargs
             )
 
+        #### Modifica beta
         # subset and align to calibration period
-        df_sec = df_sec[calib_hydro_start:run_hydro_end].reindex(
-            calibration_period,
-            method="nearest",
-            tolerance="1" + data_settings["data"]["hydro"]["calib_hydro_resolution"]
-        )
+        #df_sec = df_sec[calib_hydro_start:run_hydro_end].reindex(
+        #    calibration_period,
+        #    method="nearest",
+        #    tolerance="1" + data_settings["data"]["hydro"]["calib_hydro_resolution"]
+        #)
+        df_sec = df_sec[calib_hydro_start:run_hydro_end]
+        df_sec.index = df_sec.index.normalize()
+        df_sec = df_sec.groupby(df_sec.index).mean()
+        df_sec = df_sec.reindex(pd.DatetimeIndex(calibration_period).normalize())
+        df_sec.index = calibration_period
+        ####
 
         # force numeric
         df_sec["value"] = pd.to_numeric(df_sec["value"], errors="coerce")
@@ -547,8 +558,15 @@ def main():
             )
             with open(os.path.join(iter_exe_path, f"{domain}.info.txt"), "w") as f:
                 f.write(config_hmc_out)
+            # HMC launcher: classic "source <env_path>" OR optional conda activation
+            flags_launcher = data_settings.get("algorithm", {}).get("flags", {})
+            use_conda_env = bool(flags_launcher.get("use_conda_env", False))
 
-            make_launcher(iter_exe_path, domain, data_settings["data"]["hmc"]["system_env_libraries"])
+            if use_conda_env:
+                conda_cfg = data_settings["data"]["hmc"].get("conda", {})
+                make_launcher(iter_exe_path, domain, env_path=None, use_conda_env=True, conda=conda_cfg)
+            else:
+                make_launcher(iter_exe_path, domain, env_path=data_settings["data"]["hmc"]["system_env_libraries"])
             logging.info(' ----> Copy and setup model executable...DONE')
 
             maps_iter[iExplor] = maps_out
@@ -570,16 +588,47 @@ def main():
             except Exception as e:
                 logging.warning(f' ---> Pre-run boxplots failed: {e}')
 
-        # 5.3 Launch runs (disabled here; left as-is)
-        bashCommand = (
-                "for iIt in $(seq -f \"%03g\" 1 " + str(nExplor) + "); do "
-                                                                   "cd " + os.path.join(path_settings["work_path"],
-                                                                                        f"simulations/ITER{iIter:02d}") + "-$iIt/exe/; "
-                                                                                                                          "chmod +x launcher.sh; ./launcher.sh & done\n wait"
-        )
-        subprocess.run(bashCommand, shell=True, executable="/bin/bash")
-        logging.info(' --> Simulation runs... OK!')
+        # 5.3 Launch runs
+        cloud_settings = data_settings.get("cloud", {})
 
+        # Preferred switch: algorithm.general.execution_mode = 'local' | 'cloud'
+        exec_mode = data_settings.get("algorithm", {}).get("general", {}).get("execution_mode", None)
+
+        if exec_mode is None:
+            # Backward compatibility with older JSONs
+            launch_mode = str(cloud_settings.get("launch_mode", "local")).strip().lower()
+        else:
+            launch_mode = str(exec_mode).strip().lower()
+
+        if launch_mode not in ["cloud", "local"]:
+            raise ValueError(
+                f"Unsupported launch mode: {launch_mode}. Use algorithm.general.execution_mode = 'local'|'cloud' "
+                f"(or cloud.launch_mode for legacy JSONs)."
+            )
+
+        if launch_mode == "local":
+            # Local parallel background execution (one process per exploration)
+            bash_command = (
+                "for iIt in $(seq -f \"%03g\" 1 " + str(nExplor) + "); do "
+                "cd " + os.path.join(path_settings["work_path"], f"simulations/ITER{iIter:02d}") + "-$iIt/exe/; "
+                "chmod +x launcher.sh; ./launcher.sh & "
+                "done\nwait"
+            )
+            subprocess.run(bash_command, shell=True, executable="/bin/bash", check=True)
+
+        elif launch_mode == "cloud":
+            from tools.tools_cloud import launch_runs_aws_ec2
+            time_now = dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            launch_runs_aws_ec2(
+                domain=domain,
+                i_iter=iIter,
+                n_explor=nExplor,
+                path_settings=path_settings,
+                cloud_settings=cloud_settings,
+                time_now=time_now
+            )
+
+        logging.info(' --> Simulation runs... OK!')
         # 5.4 Read HMC output
         logging.info(' --> Read model output...')
         hmc_results = {}
@@ -606,11 +655,16 @@ def main():
                     col_names=sections["name"].values,
                     start_time=calib_hydro_start
                 )
-                df_out = df_out.reindex(
-                    calibration_period,
-                    method="nearest",
-                    tolerance="1" + data_settings["data"]["hydro"]["calib_hydro_resolution"]
-                )
+                ##### Modifica beta
+                # df_out = df_out.reindex(
+                #                     calibration_period,
+                #                     method="nearest",
+                #                     tolerance="1" + data_settings["data"]["hydro"]["calib_hydro_resolution"]
+                #                 )
+                df_out = df_out.resample("D").mean()
+                df_out = df_out.reindex(pd.DatetimeIndex(calibration_period).normalize())
+                df_out.index = calibration_period
+                #####
 
                 if df_out.dropna(how="all", axis=1).empty:
                     logging.warning(f" ---> HMC output for ITER{iIter:02d}-{iExplor:03d} is all-NaN. Skipping.")
@@ -661,7 +715,13 @@ def main():
                         )
                         raise ValueError("Simulated vs observed length mismatch.")
 
-                    scores.loc[iExplor, section] = eval_score(sim_vals, obs_vals)
+                    #### Modifica beta
+                    # scores.loc[iExplor, section] = eval_score(sim_vals, obs_vals)
+                    df_pair = pd.concat([hmc_results[iExplor][section].rename("sim"),
+                                         section_data[section]["value"].rename("obs")],
+                                        axis=1).dropna()
+                    scores.loc[iExplor, section] = eval_score(df_pair["sim"].values, df_pair["obs"].values)
+                    ####
 
             if data_settings["algorithm"]["general"]["error_metrics"]["minimum_ins_inf"]:
                 row_scores = scores.loc[iExplor]

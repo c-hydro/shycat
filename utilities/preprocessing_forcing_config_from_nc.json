@@ -1,0 +1,50 @@
+{
+  "algorithm": {
+    "general": {
+      "domain_name": "mozambique_ara_norte_1",
+      "cdo_path": "/usr/bin/",
+      "scratch_dir": "/var/tmp/idrologia_cdo",
+      "scratch_min_free_gb": 30,
+      "omp_threads": 1,
+      "cdo_threads": 1
+    },
+    "templates": {
+      "datetime_folder_rain": "%Y/%m/%d/",
+      "datetime_file_rain": "%Y%m%d%H%M",
+      "datetime_folder_era5": "",
+      "datetime_file_era5": "%Y",
+      "datetime_file_out": "%Y%m%d%H%M",
+      "datetime_folder_out": "%Y/%m/%d/",
+      "datetime_file_lai": "%m%d",
+      "datetime_folder_lai": "/%m/%d/"
+    },
+    "time": {
+      "date_start": "2006-01-01 00:00",
+      "date_end": "2009-12-31 23:00",
+      "frequency": "H"
+    },
+    "path": {
+      "output": "/home/idrologia/share/READY2ACT/{domain}/data/data_dynamic/forcing/{datetime_folder_out}",
+      "ancillary": "/home/idrologia/share/READY2ACT/{domain}/ancillary/",
+      "log": "/home/idrologia/share/READY2ACT/{domain}/log/"
+    }
+  },
+  "data": {
+    "input": {
+      "data_static": {
+        "folder_name": "/home/idrologia/share/mozambique/{domain}/DATI/static/operational/gridded/",
+        "dem": "{domain}.dem.txt"
+      },
+      "data_dynamic": {
+        "era5": {
+          "folder_name": "/home/idrologia/share/READY2ACT/data/ERA5/",
+          "file_name": "ERA5_{var}_{datetime_file_era5}.nc"
+        },
+        "lai": {
+          "folder_name": "/home/idrologia/share/READY2ACT/data/LAI/{datetime_folder_lai}",
+          "file_name": "CLIM_{datetime_file_lai}_LAI_clip_bbox_mozambique.tif"
+        }
+      }
+    }
+  }
+}
