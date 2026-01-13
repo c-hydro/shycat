@@ -47,19 +47,59 @@ def read_discharge_hmc(output_path='', col_names=None, output_name="hmc.hydrogra
 
 
 # -------------------------------------------------------------------------------------
-
-# -------------------------------------------------------------------------------------
 # Create a simple HMC launcher script in each run’s 'exe' folder
-def make_launcher(iter_exe_path, domain_name, env_path):
+def make_launcher(iter_exe_path, domain_name, env_path=None, use_conda_env=False, conda=None):
     """
-    Writes 'launcher.sh' in iter_exe_path that:
-      1) sources the provided env_path (e.g. library exports)
-      2) cds into iter_exe_path
-      3) runs the HMC binary with '<domain>.info.txt' as input.
+    Writes 'launcher.sh' in iter_exe_path.
+
+    Modes:
+      - Classic (default): source `env_path` (e.g. exports LD_LIBRARY_PATH/PATH)
+      - Conda: if `use_conda_env=True`, activate conda using `conda` dict:
+            conda = {"virtualenv_folder": "...", "virtualenv_name": "..."}
+
+    Notes:
+      - Backward compatible with the old signature (iter_exe_path, domain_name, env_path).
+      - We intentionally keep this script very small and explicit.
     """
-    with open(os.path.join(iter_exe_path, "launcher.sh"), "w") as launcher:
+    launcher_path = os.path.join(iter_exe_path, "launcher.sh")
+
+    if use_conda_env:
+        if not isinstance(conda, dict):
+            raise ValueError("conda configuration must be a dict when use_conda_env=True")
+
+        virtualenv_folder = str(conda.get("virtualenv_folder", "")).strip()
+        virtualenv_name = str(conda.get("virtualenv_name", "")).strip()
+
+        if not virtualenv_folder or not virtualenv_name:
+            raise ValueError(
+                "Missing conda settings. Provide data.hmc.conda.virtualenv_folder and data.hmc.conda.virtualenv_name"
+            )
+
+        script_folder = iter_exe_path
+
+        env_lines = [
+            f'virtualenv_folder="{virtualenv_folder}"',
+            f'virtualenv_name="{virtualenv_name}"',
+            f'script_folder="{script_folder}"',
+            'export PATH="$virtualenv_folder/bin:$PATH"',
+            'if [ -f "$virtualenv_folder/etc/profile.d/conda.sh" ]; then',
+            '  source "$virtualenv_folder/etc/profile.d/conda.sh"',
+            '  conda activate "$virtualenv_name"',
+            'else',
+            '  source activate "$virtualenv_name"',
+            'fi',
+            'export PYTHONPATH="${PYTHONPATH}:$script_folder"',
+        ]
+    else:
+        env_path = "" if env_path is None else str(env_path).strip()
+        if not env_path:
+            raise ValueError("env_path is required when use_conda_env=False")
+        env_lines = [f"source {env_path}"]
+
+    with open(launcher_path, "w") as launcher:
         launcher.write("#!/bin/bash\n")
-        launcher.write(f"source {env_path}\n")
+        for ln in env_lines:
+            launcher.write(ln + "\n")
         launcher.write(f"cd {iter_exe_path}\n")
         launcher.write("chmod 777 HMC3_calib.x\n")
         launcher.write("ulimit -s unlimited\n")
